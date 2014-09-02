@@ -80,12 +80,13 @@ def capture_stdout():
     'spam'
     """
     org = sys.stdout
-    sys.stdout = StringIO()
+    sys.stdout = capture = StringIO()
     sys.stdout.encoding = 'utf8'
     try:
         yield sys.stdout
     finally:
         sys.stdout = org
+        print(capture.getvalue())
 
 
 def has_program(cmd, args=['--version']):
@@ -155,7 +156,8 @@ class TestHelper(object):
 
     def teardown_beets(self):
         del self.lib._connections
-        del os.environ['BEETSDIR']
+        if 'BEETSDIR' in os.environ:
+            del os.environ['BEETSDIR']
         self.remove_temp_dir()
         self.config.clear()
         beets.config.read(user=False, defaults=True)
@@ -180,24 +182,35 @@ class TestHelper(object):
         beets.plugins._instances = {}
 
     def create_importer(self, item_count=1, album_count=1):
-        """Returns import session with fixtures.
+        """Create files to import and return corresponding session.
 
         Copies the specified number of files to a subdirectory of
-        ``self.temp_dir`` and creates a ``TestImportSession`` for this
-        path.
+        `self.temp_dir` and creates a `TestImportSession` for this path.
         """
         import_dir = os.path.join(self.temp_dir, 'import')
         if not os.path.isdir(import_dir):
             os.mkdir(import_dir)
 
-        for i in range(album_count):
-            album = u'album {0}'.format(i)
+        album_no = 0
+        while album_count:
+            album = u'album {0}'.format(album_no)
             album_dir = os.path.join(import_dir, album)
+            if os.path.exists(album_dir):
+                album_no += 1
+                continue
             os.mkdir(album_dir)
-            for j in range(item_count):
-                title = 'track {0}'.format(j)
+            album_count -= 1
+
+            track_no = 0
+            album_item_count = item_count
+            while album_item_count:
+                title = 'track {0}'.format(track_no)
                 src = os.path.join(_common.RSRC, 'full.mp3')
                 dest = os.path.join(album_dir, '{0}.mp3'.format(title))
+                if os.path.exists(dest):
+                    track_no += 1
+                    continue
+                album_item_count -= 1
                 shutil.copy(src, dest)
                 mediafile = MediaFile(dest)
                 mediafile.update({
@@ -224,19 +237,19 @@ class TestHelper(object):
         path = os.path.join(_common.RSRC, 'full.' + ext)
         for i in range(count):
             item = Item.from_path(str(path))
-            item.album = u'\xc3\xa4lbum {0}'.format(i)  # Check unicode paths
-            item.title = u't\xc3\x8ftle {0}'.format(i)
+            item.album = u'\u00e4lbum {0}'.format(i)  # Check unicode paths
+            item.title = u't\u00eftle {0}'.format(i)
             item.add(self.lib)
             item.move(copy=True)
             item.store()
             items.append(item)
         return items
 
-    def add_album_fixture(self, track_count=1):
+    def add_album_fixture(self, track_count=1, ext='mp3'):
         """Add an album with files to the database.
         """
         items = []
-        path = os.path.join(_common.RSRC, 'full.mp3')
+        path = os.path.join(_common.RSRC, 'full.' + ext)
         for i in range(track_count):
             item = Item.from_path(str(path))
             item.album = u'\u00e4lbum'  # Check unicode paths
@@ -276,6 +289,11 @@ class TestHelper(object):
         else:
             lib = Library(':memory:')
         beets.ui._raw_main(list(args), lib)
+
+    def run_with_output(self, *args):
+        with capture_stdout() as out:
+            self.run_command(*args)
+        return out.getvalue()
 
     def create_temp_dir(self):
         """Create a temporary directory and assign it into
@@ -340,7 +358,7 @@ class TestImportSession(importer.ImportSession):
         assert isinstance(resolution, self.Resolution)
         self._resolutions.append(resolution)
 
-    def resolve_duplicate(self, task):
+    def resolve_duplicate(self, task, found_duplicates):
         try:
             res = self._resolutions.pop(0)
         except IndexError:

@@ -119,6 +119,31 @@ compatibility with Windows-influenced network filesystems like Samba).
 Trailing dots and trailing whitespace, which can cause problems on Windows
 clients, are also removed.
 
+Note that paths might contain special characters such as typographical
+quotes (``“”``). With the configuration above, those will not be
+replaced as they don't match the typewriter quote (``"``). To also strip these
+special characters, you can either add them to the replacement list or use the
+:ref:`asciify-paths` configuration option below.
+
+.. _asciify-paths:
+
+asciify_paths
+~~~~~~~~~~~~~
+
+Convert all non-ASCII characters in paths to ASCII equivalents.
+
+For example, if your path template for
+singletons is ``singletons/$title`` and the title of a track is "Café",
+then the track will be saved as ``singletons/Cafe.mp3``.  The changes
+take place before applying the :ref:`replace` configuration and are roughly
+equivalent to wrapping all your path templates in the ``%asciify{}``
+:ref:`template function <template-functions>`.
+
+Default: ``no``.
+
+.. _unidecode module: http://pypi.python.org/pypi/Unidecode
+
+
 .. _art-filename:
 
 art_filename
@@ -162,6 +187,24 @@ list_format_album
 Format to use when listing *albums* with :ref:`list-cmd` and other
 commands. Defaults to ``$albumartist - $album``. The ``-f`` command-line
 option overrides this setting.
+
+.. _sort_item:
+
+sort_item
+~~~~~~~~~
+
+Sort order to use when listing *individual items* with the :ref:`list-cmd`
+command and other commands that need to print out items. Defaults to
+``smartartist+``. Any command-line sort order overrides this setting.
+
+.. _sort_album:
+
+sort_album
+~~~~~~~~~~
+
+Sort order to use when listing *albums* with the :ref:`list-cmd`
+command. Defaults to ``smartartist+``. Any command-line sort order overrides
+this setting.
 
 .. _original_date:
 
@@ -377,6 +420,12 @@ tracks from many albums mixed together.
 The ``--group-albums`` or ``-g`` option to the :ref:`import-cmd` command is
 equivalent, and the *G* interactive option invokes the same workflow.
 
+.. note::
+    
+    The :ref:`import log <import_log>` currently contains less information
+    in album-grouping mode. (Specifically, no directory names recorded because
+    directories are not used for grouping in this mode.)
+
 Default: ``no``.
 
 .. _autotag:
@@ -529,6 +578,19 @@ the penalty name to the ``ignored`` setting::
         ignored: missing_tracks unmatched_tracks
 
 The available penalties are the same as those for the :ref:`max_rec` setting.
+
+.. _required:
+
+required
+~~~~~~~~
+
+You can avoid matches that lack certain required information. Add the tags you
+want to enforce to the ``required`` setting::
+
+    match:
+        required: year label catalognum country
+
+No tags are required by default.
 
 .. _path-format-config:
 

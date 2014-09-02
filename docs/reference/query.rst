@@ -144,7 +144,7 @@ matches for the whole month.
 Date *intervals*, like the numeric intervals described above, are separated by
 two dots (``..``). You can specify a start, an end, or both.
 
-Here is an example that finds all the songs added in 2008::
+Here is an example that finds all the albums added in 2008::
 
     $ beet ls -a 'added:2008'
 
@@ -156,7 +156,7 @@ Find all items added before the year 2010::
 
     $ beet ls 'added:..2009'
 
-Find all items added on 2008-12-01 but before 2009-10-12::
+Find all items added on or after 2008-12-01 but before 2009-10-12::
 
     $ beet ls 'added:2008-12..2009-10-11'
 
@@ -183,3 +183,32 @@ equivalent::
 Note that this only matches items that are *already in your library*, so a path
 query won't necessarily find *all* the audio files in a directory---just the
 ones you've already added to your beets library.
+
+
+.. _query-sort:
+
+Sort Order
+----------
+
+You can also specify the order used when outputting the results. Of course, this
+is only useful when displaying the result, for example with the ``list``
+command, and is useless when the query is used as a filter for an command. Use
+the name of the `field` you want to sort on, followed by a ``+`` or ``-`` sign
+if you want ascending or descending sort. For example this command::
+
+    $ beet list -a year+
+
+will list all albums in chronological order.
+
+There is a special ``smartartist`` sort that uses sort-specific field (
+``artist_sort`` for items and ``albumartist_sort`` for albums) but falls back to
+standard artist fields if these are empty. When no sort order is specified,
+``smartartist+`` is used (but this is configurable).
+
+You can also specify several sort orders, which will be used in the same order at
+which they appear in your query::
+
+    $ beet list -a genre+ year+
+
+This command will sort all albums by genre and, in each genre, in chronological
+order.

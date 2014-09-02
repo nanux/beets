@@ -101,6 +101,12 @@ library.) The generated fingerprints will be stored in the library database.
 If you have the ``import.write`` config option enabled, they will also be
 written to files' metadata.
 
+You can disable fingerprinting on import by setting the ``auto`` option to
+false, like so::
+
+    chroma:
+        auto: no
+
 .. _submitfp:
 
 Submitting Fingerprints

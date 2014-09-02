@@ -1,15 +1,168 @@
 Changelog
 =========
 
-1.3.6 (in development)
+1.3.8 (in development)
 ----------------------
+
+This release adds **sorting** to beets queries. See :ref:`query-sort`.
+
+Features:
+
+* :doc:`/plugins/info`: Files can be specified through library queries
+  and the ``--library`` option prints library fields instead of tags.
+  Tags and library fields for multiple files can be summarized with the
+  ``--summarize`` option.
+* :doc:`/plugins/mbcollection`: A new option lets you automatically update
+  your collection on import. Thanks to Olin Gay.
+
+Fixes:
+
+* Invalid state files don't crash the importer.
+* :doc:`/plugins/lyrics`: Only strip featured artists and
+  parenthesized title suffixes if no lyrics for the original artist and
+  title were found.
+* Fix a crash when reading some files with missing tags.
+* :doc:`/plugins/discogs`: Compatibility with the new 2.0 version of the
+  `discogs_client`_ Python library. If you were using the old version, you wil
+  need to upgrade to the latest version of the library to use the
+  correspondingly new version of the plugin (e.g., with
+  ``pip install -U discogs-client``). Thanks to Andriy Kohut.
+* Fix a crash when writing files that can't be read. Thanks to Jocelyn De La
+  Rosa.
+* The :ref:`stats-cmd` command now counts album artists. The album count also
+  more accurately reflects the number of albums in the database.
+* :doc:`/plugins/convert`: Avoid crashes when tags cannot be written to newly
+  converted files.
+* Formatting templates with item data no longer confusingly shows album-level
+  data when the two are inconsistent.
+* Resuming imports and beginning incremental imports should now be much faster
+  when there is a lot of previously-imported music to skip.
+
+.. _discogs_client: https://github.com/discogs/discogs_client
+
+
+1.3.7 (August 22, 2014)
+-----------------------
+
+This release of beets fixes all the bugs, and you can be confident that you
+will never again find any bugs in beets, ever.
+It also adds support for plain old AIFF files and adds three more plugins,
+including a nifty one that lets you measure a song's tempo by tapping out the
+beat on your keyboard.
+The importer deals more elegantly with duplicates and you can broaden your
+cover art search to the entire web with Google Image Search.
+
+The big new features are:
+
+* Support for AIFF files. Tags are stored as ID3 frames in one of the file's
+  IFF chunks. Thanks to Evan Purkhiser for contributing support to `Mutagen`_.
+* The new :doc:`/plugins/importadded` reads files' modification times to set
+  their "added" date. Thanks to Stig Inge Lea Bjørnsen.
+* The new :doc:`/plugins/bpm` lets you manually measure the tempo of a playing
+  song. Thanks to aroquen.
+* The new :doc:`/plugins/spotify` generates playlists for your `Spotify`_
+  account. Thanks to Olin Gay.
+* A new :ref:`required` configuration option for the importer skips matches
+  that are missing certain data. Thanks to oprietop.
+* When the importer detects duplicates, it now shows you some details about
+  the potentially-replaced music so you can make an informed decision. Thanks
+  to Howard Jones.
+* :doc:`/plugins/fetchart`: You can now optionally search for cover art on
+  Google Image Search. Thanks to Lemutar.
+* A new :ref:`asciify-paths` configuration option replaces all non-ASCII
+  characters in paths.
+
+.. _Mutagen: https://bitbucket.org/lazka/mutagen
+.. _Spotify: https://www.spotify.com/
+
+And the multitude of little improvements and fixes:
+
+* Compatibility with the latest version of `Mutagen`_, 1.23.
+* :doc:`/plugins/web`: Lyrics now display readably with correct line breaks.
+  Also, the detail view scrolls to reveal all of the lyrics. Thanks to Meet
+  Udeshi.
+* :doc:`/plugins/play`: The ``command`` config option can now contain
+  arguments (rather than just an executable). Thanks to Alessandro Ghedini.
+* Fix an error when using the :ref:`modify-cmd` command to remove a flexible
+  attribute. Thanks to Pierre Rust.
+* :doc:`/plugins/info`: The command now shows audio properties (e.g., bitrate)
+  in addition to metadata. Thanks Alessandro Ghedini.
+* Avoid a crash on Windows when writing to files with special characters in
+  their names.
+* :doc:`/plugins/play`: Playing albums now generates filenames by default (as
+  opposed to directories) for better compatibility. The ``use_folders`` option
+  restores the old behavior. Thanks to Lucas Duailibe.
+* Fix an error when importing an empty directory with the ``--flat`` option.
+* :doc:`/plugins/mpdstats`: The last song in a playlist is now correctly
+  counted as played. Thanks to Johann Klähn.
+* :doc:`/plugins/zero`: Prevent accidental nulling of dangerous fields (IDs
+  and paths). Thanks to brunal.
+* The :ref:`remove-cmd` command now shows the paths of files that will be
+  deleted. Thanks again to brunal.
+* Don't display changes for fields that are not in the restricted field set.
+  This fixes :ref:`write-cmd` showing changes for fields that are not written
+  to the file.
+* The :ref:`write-cmd` command avoids displaying the item name if there are
+  no changes for it.
+* When using both the :doc:`/plugins/convert` and the :doc:`/plugins/scrub`,
+  avoid scrubbing the source file of conversions. (Fix a regression introduced
+  in the previous release.)
+* :doc:`/plugins/replaygain`: Logging is now quieter during import. Thanks to
+  Yevgeny Bezman.
+* :doc:`/plugins/fetchart`: When loading art from the filesystem, we now
+  prioritize covers with more keywords in them. This means that
+  ``cover-front.jpg`` will now be taken before ``cover-back.jpg`` because it
+  contains two keywords rather than one. Thanks to Fabrice Laporte.
+* :doc:`/plugins/lastgenre`: Remove duplicates from canonicalized genre lists.
+  Thanks again to Fabrice Laporte.
+* The importer now records its progress when skipping albums. This means that
+  incremental imports will no longer try to import albums again after you've
+  chosen to skip them, and erroneous invitations to resume "interrupted"
+  imports should be reduced. Thanks to jcassette.
+* :doc:`/plugins/bucket`: You can now customize the definition of alphanumeric
+  "ranges" using regular expressions. And the heuristic for detecting years
+  has been improved. Thanks to sotho.
+* Already-imported singleton tracks are skipped when resuming an
+  import.
+* :doc:`/plugins/chroma`: A new ``auto`` configuration option disables
+  fingerprinting on import. Thanks to ddettrittus.
+* :doc:`/plugins/convert`: A new ``--format`` option to can select the
+  transcoding preset from the command-line.
+* :doc:`/plugins/convert`: Transcoding presets can now omit their filename
+  extensions (extensions default to the name of the preset).
+* :doc:`/plugins/convert`: A new ``--pretend`` option lets you preview the
+  commands the plugin will execute without actually taking any action. Thanks
+  to Dietrich Daroch.
+* Fix a crash when a float-valued tag field only contained a ``+`` or ``-``
+  character.
+* Fixed a regression in the core that caused the :doc:`/plugins/scrub` not to
+  work in ``auto`` mode. Thanks to Harry Khanna.
+* The :ref:`write-cmd` command now has a ``--force`` flag. Thanks again to
+  Harry Khanna.
+* :doc:`/plugins/mbsync`: Track alignment now works with albums that have
+  multiple copies of the same recording. Thanks to Rui Gonçalves.
+
+
+1.3.6 (May 10, 2014)
+--------------------
+
+This is primarily a bugfix release, but it also brings two new plugins: one
+for playing music in desktop players and another for organizing your
+directories into "buckets." It also brings huge performance optimizations to
+queries---your ``beet ls`` commands will now go much faster.
+
+New features:
 
 * The new :doc:`/plugins/play` lets you start your desktop music player with
   the songs that match a query. Thanks to David Hamp-Gonsalves.
+* The new :doc:`/plugins/bucket` provides a ``%bucket{}`` function for path
+  formatting to generate folder names representing ranges of years or initial
+  letter. Thanks to Fabrice Laporte.
+* Item and album queries are much faster.
 * :doc:`/plugins/ftintitle`: A new option lets you remove featured artists
   entirely instead of moving them to the title. Thanks to SUTJael.
 
-Fixes:
+And those all-important bug fixes:
 
 * :doc:`/plugins/mbsync`: Fix a regression in 1.3.5 that broke the plugin
   entirely.
@@ -18,7 +171,7 @@ Fixes:
 * Fix encoding-related logging errors in :doc:`/plugins/convert` and
   :doc:`/plugins/replaygain`.
 * :doc:`/plugins/replaygain`: Suppress a deprecation warning emitted by later
-  version of PyGI.
+  versions of PyGI.
 * Fix a crash when reading files whose iTunes SoundCheck tags contain
   non-ASCII characters.
 * The ``%if{}`` template function now appropriately interprets the condition
@@ -31,6 +184,7 @@ Fixes:
   embedding album art fails.
 * :doc:`/plugins/convert`: Embed cover art into converted files.
   Previously they were embedded into the source files.
+* New plugin event: `before_item_moved`. Thanks to Robert Speicher.
 
 
 1.3.5 (April 15, 2014)

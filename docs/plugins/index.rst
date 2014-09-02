@@ -58,6 +58,10 @@ by typing ``beet version``.
    fromfilename
    ftintitle
    keyfinder
+   bucket
+   importadded
+   bpm
+   spotify
 
 Autotagger Extensions
 ---------------------
@@ -90,6 +94,9 @@ Metadata
   statistics (last_played, play_count, skip_count, rating).
 * :doc:`keyfinder`: Use the `KeyFinder`_ program to detect the musical
   key from the audio.
+* :doc:`importadded`: Use file modification times for guessing the value for
+  the `added` field in the database.
+* :doc:`bpm`: Determine bpm from keystrokes
 
 .. _Acoustic Attributes: http://developer.echonest.com/acoustic-attributes.html
 .. _the Echo Nest: http://www.echonest.com
@@ -102,6 +109,8 @@ Path Formats
 * :doc:`rewrite`: Substitute values in path formats.
 * :doc:`the`: Move patterns in path formats (i.e., move "a" and "the" to the
   end).
+* :doc:`bucket`: Group your files into bucket directories that cover different
+  field values ranges.
 
 Interoperability
 ----------------
@@ -127,6 +136,7 @@ Miscellaneous
 * :doc:`info`: Print music files' tags to the console.
 * :doc:`missing`: List missing tracks.
 * :doc:`duplicates`: List duplicate tracks or albums.
+* :doc:`spotify`: Create Spotify playlists from the Beets library
 
 .. _MPD: http://www.musicpd.org/
 .. _MPD clients: http://mpd.wikia.com/wiki/Clients

@@ -23,6 +23,7 @@ import time
 import itertools
 import codecs
 import platform
+import re
 
 import beets
 from beets import ui
@@ -38,6 +39,7 @@ from beets.util.functemplate import Template
 from beets import library
 from beets import config
 from beets.util.confit import _package_path
+from beets.dbcore import sort_from_strings
 
 VARIOUS_ARTISTS = u'Various Artists'
 
@@ -110,6 +112,30 @@ fields_cmd = ui.Subcommand(
 )
 fields_cmd.func = fields_func
 default_commands.append(fields_cmd)
+
+
+# help: Print help text for commands
+
+class HelpCommand(ui.Subcommand):
+
+    def __init__(self):
+        super(HelpCommand, self).__init__(
+            'help', aliases=('?',),
+            help='give detailed help on a specific sub-command',
+        )
+
+    def func(self, lib, opts, args):
+        if args:
+            cmdname = args[0]
+            helpcommand = self.root_parser._subcommand_for_name(cmdname)
+            if not helpcommand:
+                raise ui.UserError("unknown command '{0}'".format(cmdname))
+            helpcommand.print_help()
+        else:
+            self.root_parser.print_help()
+
+
+default_commands.append(HelpCommand())
 
 
 # import: Autotagger and importer.
@@ -397,6 +423,37 @@ def show_item_change(item, match):
     if disambig:
         info.append(ui.colorize('lightgray', '(%s)' % disambig))
     print_(' '.join(info))
+
+
+def summarize_items(items, singleton):
+    """Produces a brief summary line describing a set of items. Used for
+    manually resolving duplicates during import.
+
+    `items` is a list of `Item` objects. `singleton` indicates whether
+    this is an album or single-item import (if the latter, them `items`
+    should only have one element).
+    """
+    summary_parts = []
+    if not singleton:
+        summary_parts.append("{0} items".format(len(items)))
+
+    format_counts = {}
+    for item in items:
+        format_counts[item.format] = format_counts.get(item.format, 0) + 1
+    if len(format_counts) == 1:
+        # A single format.
+        summary_parts.append(items[0].format)
+    else:
+        # Enumerate all the formats.
+        for format, count in format_counts.iteritems():
+            summary_parts.append('{0} {1}'.format(format, count))
+
+    average_bitrate = sum([item.bitrate for item in items]) / len(items)
+    total_duration = sum([item.length for item in items])
+    summary_parts.append('{0}kbps'.format(int(average_bitrate / 1000)))
+    summary_parts.append(ui.human_seconds_short(total_duration))
+
+    return ', '.join(summary_parts)
 
 
 def _summary_judment(rec):
@@ -716,7 +773,7 @@ class TerminalImportSession(importer.ImportSession):
                 assert isinstance(choice, autotag.TrackMatch)
                 return choice
 
-    def resolve_duplicate(self, task):
+    def resolve_duplicate(self, task, found_duplicates):
         """Decide what to do when a new album or item seems similar to one
         that's already in the library.
         """
@@ -728,6 +785,18 @@ class TerminalImportSession(importer.ImportSession):
             log.info('Skipping.')
             sel = 's'
         else:
+            # Print some detail about the existing and new items so the
+            # user can make an informed decision.
+            for duplicate in found_duplicates:
+                print("Old: " + summarize_items(
+                    list(duplicate.items()) if task.is_album else [duplicate],
+                    not task.is_album,
+                ))
+            print("New: " + summarize_items(
+                task.imported_items(),
+                not task.is_album,
+            ))
+
             sel = ui.input_options(
                 ('Skip new', 'Keep both', 'Remove old')
             )
@@ -898,11 +967,18 @@ def list_items(lib, query, album, fmt):
     albums instead of single items.
     """
     tmpl = Template(ui._pick_format(album, fmt))
+
     if album:
-        for album in lib.albums(query):
+        sort_parts = str(config['sort_album']).split()
+        sort_order = sort_from_strings(library.Album,
+                                       sort_parts)
+        for album in lib.albums(query, sort_order):
             ui.print_obj(album, lib, tmpl)
     else:
-        for item in lib.items(query):
+        sort_parts = str(config['sort_item']).split()
+        sort_order = sort_from_strings(library.Item,
+                                       sort_parts)
+        for item in lib.items(query, sort_order):
             ui.print_obj(item, lib, tmpl)
 
 
@@ -1056,17 +1132,21 @@ def remove_items(lib, query, album, delete):
     # Get the matching items.
     items, albums = _do_query(lib, query, album)
 
-    # Show all the items.
-    for item in items:
-        ui.print_obj(item, lib)
-
-    # Confirm with user.
+    # Prepare confirmation with user.
     print_()
     if delete:
+        fmt = u'$path - $title'
         prompt = 'Really DELETE %i files (y/n)?' % len(items)
     else:
+        fmt = None
         prompt = 'Really remove %i items from the library (y/n)?' % \
                  len(items)
+
+    # Show all the items.
+    for item in items:
+        ui.print_obj(item, lib, fmt)
+
+    # Confirm with user.
     if not ui.input_yn(prompt, True):
         return
 
@@ -1106,6 +1186,7 @@ def show_stats(lib, query, exact):
     total_items = 0
     artists = set()
     albums = set()
+    album_artists = set()
 
     for item in items:
         if exact:
@@ -1115,7 +1196,9 @@ def show_stats(lib, query, exact):
         total_time += item.length
         total_items += 1
         artists.add(item.artist)
-        albums.add(item.album)
+        album_artists.add(item.albumartist)
+        if item.album_id:
+            albums.add(item.album_id)
 
     size_str = '' + ui.human_bytes(total_size)
     if exact:
@@ -1125,8 +1208,10 @@ def show_stats(lib, query, exact):
 Total time: {1} ({2:.2f} seconds)
 Total size: {3}
 Artists: {4}
-Albums: {5}""".format(total_items, ui.human_seconds(total_time), total_time,
-                      size_str, len(artists), len(albums)))
+Albums: {5}
+Album artists: {6}""".format(total_items, ui.human_seconds(total_time),
+                             total_time, size_str, len(artists), len(albums),
+                             len(album_artists)))
 
 
 def stats_func(lib, opts, args):
@@ -1167,15 +1252,16 @@ default_commands.append(version_cmd)
 
 def modify_items(lib, mods, dels, query, write, move, album, confirm):
     """Modifies matching items according to user-specified assignments and
-    deletions. `mods` is a list of "field=value" strings indicating
+    deletions.
+
+    `mods` is a dictionary of field and value pairse indicating
     assignments. `dels` is a list of fields to be deleted.
     """
     # Parse key=value specifications into a dictionary.
     model_cls = library.Album if album else library.Item
-    fsets = {}
-    for mod in mods:
-        key, value = mod.split('=', 1)
-        fsets[key] = model_cls._parse(key, value)
+
+    for key, value in mods.items():
+        mods[key] = model_cls._parse(key, value)
 
     # Get the items to modify.
     items, albums = _do_query(lib, query, album, False)
@@ -1183,11 +1269,11 @@ def modify_items(lib, mods, dels, query, write, move, album, confirm):
 
     # Apply changes *temporarily*, preview them, and collect modified
     # objects.
-    print_('Modifying %i %ss.' % (len(objs), 'album' if album else 'item'))
+    print_('Modifying {0} {1}s.'
+           .format(len(objs), 'album' if album else 'item'))
     changed = set()
     for obj in objs:
-        for field, value in fsets.iteritems():
-            obj[field] = value
+        obj.update(mods)
         for field in dels:
             del obj[field]
         if ui.show_model_changes(obj):
@@ -1238,14 +1324,15 @@ def modify_parse_args(args):
     assignments (field=value), and deletions (field!).  Returns the result as
     a three-tuple in that order.
     """
-    mods = []
+    mods = {}
     dels = []
     query = []
     for arg in args:
         if arg.endswith('!') and '=' not in arg and ':' not in arg:
             dels.append(arg[:-1])  # Strip trailing !.
         elif '=' in arg and ':' not in arg.split('=', 1)[0]:
-            mods.append(arg)
+            key, val = arg.split('=', 1)
+            mods[key] = val
         else:
             query.append(arg)
     return query, mods, dels
@@ -1343,7 +1430,7 @@ default_commands.append(move_cmd)
 
 # write: Write tags into files.
 
-def write_items(lib, query, pretend):
+def write_items(lib, query, pretend, force):
     """Write tag information from the database to the respective files
     in the filesystem.
     """
@@ -1368,20 +1455,23 @@ def write_items(lib, query, pretend):
 
         # Check for and display changes.
         changed = ui.show_model_changes(item, clean_item,
-                                        library.Item._media_fields,
-                                        always=True)
-        if changed and not pretend:
+                                        library.Item._media_fields, force)
+        if (changed or force) and not pretend:
             item.try_write()
 
 
 def write_func(lib, opts, args):
-    write_items(lib, decargs(args), opts.pretend)
+    write_items(lib, decargs(args), opts.pretend, opts.force)
 
 
 write_cmd = ui.Subcommand('write', help='write tag information to files')
 write_cmd.parser.add_option(
     '-p', '--pretend', action='store_true',
     help="show all changes but do nothing"
+)
+write_cmd.parser.add_option(
+    '-f', '--force', action='store_true',
+    help="write tags even if the existing tags match the database"
 )
 write_cmd.func = write_func
 default_commands.append(write_cmd)
@@ -1495,7 +1585,8 @@ def completion_script(commands):
         command_names.append(name)
 
         for alias in cmd.aliases:
-            aliases[alias] = name
+            if re.match(r'^\w+$', alias):
+                aliases[alias] = name
 
         options[name] = {'flags': [], 'opts': []}
         for opts in cmd.parser._get_all_options()[1:]:
@@ -1513,9 +1604,6 @@ def completion_script(commands):
         'flags': ['-v', '--verbose'],
         'opts': '-l --library -c --config -d --directory -h --help'.split(' ')
     }
-
-    # Help subcommand
-    command_names.append('help')
 
     # Add flags common to all commands
     options['_common'] = {

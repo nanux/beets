@@ -25,7 +25,7 @@ from beets.plugins import BeetsPlugin
 from beets.util import syspath, command_output, displayable_path
 from beets import config
 
-log = logging.getLogger('beets')
+log = logging.getLogger('beets.replaygain')
 
 
 # Utilities.
@@ -280,13 +280,16 @@ class GStreamerBackend(object):
                 GObject.threads_init()
             Gst.init([sys.argv[0]])
         except:
-            raise FatalReplayGainError("GStreamer failed to initialize")
+            raise FatalReplayGainError(
+                "Failed to load GStreamer; check that python-gi is installed"
+            )
 
         self.GObject = GObject
         self.GLib = GLib
         self.Gst = Gst
 
     def compute(self, files, album):
+        self._error = None
         self._files = list(files)
 
         if len(self._files) == 0:
@@ -299,6 +302,8 @@ class GStreamerBackend(object):
 
         if self._set_first_file():
             self._main_loop.run()
+            if self._error is not None:
+                raise self._error
 
     def compute_track_gain(self, items):
         self.compute(items, False)
@@ -342,9 +347,12 @@ class GStreamerBackend(object):
         self._pipe.set_state(self.Gst.State.NULL)
         self._main_loop.quit()
         err, debug = message.parse_error()
+        f = self._src.get_property("location")
         # A GStreamer error, either an unsupported format or a bug.
-        raise ReplayGainError("Error %s - %s on file %s" %
-                              (err, debug, self._src.get_property("location")))
+        self._error = \
+            ReplayGainError(u"Error {0} - {1} on file {2}".format(err,
+                                                                  debug,
+                                                                  f))
 
     def _on_tag(self, bus, message):
         tags = message.parse_tag()
@@ -555,7 +563,7 @@ class ReplayGainPlugin(BeetsPlugin):
                 if write:
                     item.try_write()
         except ReplayGainError as e:
-            log.warn(u"ReplayGain error: {0}".format(e))
+            log.info(u"ReplayGain error: {0}".format(e))
         except FatalReplayGainError as e:
             raise ui.UserError(
                 u"Fatal replay gain error: {0}".format(e)
@@ -589,7 +597,7 @@ class ReplayGainPlugin(BeetsPlugin):
             if write:
                 item.try_write()
         except ReplayGainError as e:
-            log.warn(u"ReplayGain error: {0}".format(e))
+            log.info(u"ReplayGain error: {0}".format(e))
         except FatalReplayGainError as e:
             raise ui.UserError(
                 u"Fatal replay gain error: {0}".format(e)
@@ -601,6 +609,8 @@ class ReplayGainPlugin(BeetsPlugin):
         if not self.automatic:
             return
 
+        log.setLevel(logging.WARN)
+
         if task.is_album:
             self.handle_album(task.album, False)
         else:
@@ -610,6 +620,8 @@ class ReplayGainPlugin(BeetsPlugin):
         """Return the "replaygain" ui subcommand.
         """
         def func(lib, opts, args):
+            log.setLevel(logging.INFO)
+
             write = config['import']['write'].get(bool)
 
             if opts.album:

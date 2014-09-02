@@ -17,11 +17,16 @@ Command-Line Interface
 
         beet COMMAND [ARGS...]
 
-    Beets also offers command line completion via the `completion`_
-    command.  The rest of this document describes the available
+    The rest of this document describes the available
     commands. If you ever need a quick list of what's available, just
     type ``beet help`` or ``beet help COMMAND`` for help with a specific
     command.
+
+    Beets also offers shell completion. For bash, see the `completion`_
+    command; for zsh, see the accompanying `completion script`_ for the
+    ``beet`` command.
+
+
 
 
 Commands
@@ -169,8 +174,9 @@ list
 
 Want to search for "Gronlandic Edit" by of Montreal? Try ``beet list
 gronlandic``.  Maybe you want to see everything released in 2009 with
-"vegetables" in the title? Try ``beet list year:2009 title:vegetables``. (Read
-more in :doc:`query`.)
+"vegetables" in the title? Try ``beet list year:2009 title:vegetables``. You 
+can also specify the order used when outputting the results (Read more in 
+:doc:`query`.)
 
 You can use the ``-a`` switch to search for albums instead of individual items.
 In this case, the queries you use are restricted to album-level fields: for
@@ -279,7 +285,7 @@ write
 `````
 ::
 
-    beet write [-ap] [QUERY]
+    beet write [-pf] [QUERY]
 
 Write metadata from the database into files' tags.
 
@@ -287,11 +293,14 @@ When you make changes to the metadata stored in beets' library database
 (during import or with the :ref:`modify-cmd` command, for example), you often
 have the option of storing changes only in the database, leaving your files
 untouched. The ``write`` command lets you later change your mind and write the
-contents of the database into the files.
+contents of the database into the files. By default, this writes the changes only if there is a difference between the database and the tags in the file.
+
+You can think of this command as the opposite of :ref:`update-cmd`.
 
 The ``-p`` option previews metadata changes without actually applying them.
 
-You can think of this command as the opposite of :ref:`update-cmd`.
+The ``-f`` option forces a write to the file, even if the file tags match the database. This is useful for making sure that enabled plugins that run on write (e.g., the Scrub and Zero plugins) are run on the file. 
+
 
 
 .. _stats-cmd:
@@ -398,6 +407,10 @@ sequence for the shell and won't be seen by beets.)
 Completion of plugin commands only works for those plugins
 that were enabled when running ``beet completion``. If you add a plugin
 later on you will want to re-generate the script.
+
+If you use zsh, take a look instead at the included `completion script`_.
+
+.. _completion script: https://github.com/sampsyo/beets/blob/master/extra/_beet
 
 
 .. only:: man

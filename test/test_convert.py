@@ -13,8 +13,12 @@
 # included in all copies or substantial portions of the Software.
 
 import os.path
+import _common
 from _common import unittest
 from helper import TestHelper, control_stdin
+
+from beets.mediafile import MediaFile
+
 
 class ImportConvertTest(unittest.TestCase, TestHelper):
 
@@ -63,13 +67,23 @@ class ConvertCliTest(unittest.TestCase, TestHelper):
 
     def setUp(self):
         self.setup_beets(disk=True)  # Converter is threaded
-        self.item, = self.add_item_fixtures(ext='ogg')
+        self.album = self.add_album_fixture(ext='ogg')
+        self.item = self.album.items()[0]
         self.load_plugins('convert')
 
         self.convert_dest = os.path.join(self.temp_dir, 'convert_dest')
-        self.config['convert']['dest'] = str(self.convert_dest)
-        self.config['convert']['command'] = u'cp $source $dest'
-        self.config['convert']['paths']['default'] = u'converted'
+        self.config['convert'] = {
+            'dest': self.convert_dest,
+            'paths': {'default': 'converted'},
+            'format': 'mp3',
+            'formats': {
+                'mp3': 'cp $source $dest',
+                'opus': {
+                    'command': 'cp $source $dest',
+                    'extension': 'ops',
+                }
+            }
+        }
 
     def tearDown(self):
         self.unload_plugins()
@@ -89,6 +103,26 @@ class ConvertCliTest(unittest.TestCase, TestHelper):
 
         self.item.load()
         self.assertEqual(os.path.splitext(self.item.path)[1], '.mp3')
+
+    def test_format_option(self):
+        with control_stdin('y'):
+            self.run_command('convert', '--format', 'opus', self.item.path)
+            converted = os.path.join(self.convert_dest, 'converted.ops')
+        self.assertTrue(os.path.isfile(converted))
+
+    def test_embed_album_art(self):
+        self.config['convert']['embed'] = True
+        image_path = os.path.join(_common.RSRC, 'image-2x3.jpg')
+        self.album.artpath = image_path
+        self.album.store()
+        with open(os.path.join(image_path)) as f:
+            image_data = f.read()
+
+        with control_stdin('y'):
+            self.run_command('convert', self.item.path)
+        converted = os.path.join(self.convert_dest, 'converted.mp3')
+        mediafile = MediaFile(converted)
+        self.assertEqual(mediafile.images[0].data, image_data)
 
 
 def suite():

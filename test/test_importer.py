@@ -15,6 +15,7 @@
 """Tests for the general importer functionality.
 """
 import os
+import re
 import shutil
 import StringIO
 from tempfile import mkstemp
@@ -26,6 +27,7 @@ import _common
 from _common import unittest
 from helper import TestImportSession, TestHelper, has_program
 from beets import importer
+from beets.importer import albums_in_dir
 from beets.mediafile import MediaFile
 from beets import autotag
 from beets.autotag import AlbumInfo, TrackInfo, AlbumMatch
@@ -1122,6 +1124,8 @@ class ResumeImportTest(unittest.TestCase, TestHelper):
         self.importer = self.create_importer(album_count=2)
         self.config['import']['resume'] = True
 
+        # Aborts import after one album. This also ensures that we skip
+        # the first album in the second try.
         def raise_exception(event, **kwargs):
             if event == 'album_imported':
                 raise importer.ImportAbort
@@ -1135,13 +1139,14 @@ class ResumeImportTest(unittest.TestCase, TestHelper):
         self.assertEqual(len(self.lib.albums()), 2)
         self.assertIsNotNone(self.lib.albums('album:album 1').get())
 
-    @unittest.skip('not working yet')
     @patch('beets.plugins.send')
     def test_resume_singleton(self, plugins_send):
         self.importer = self.create_importer(item_count=2)
         self.config['import']['resume'] = True
         self.config['import']['singletons'] = True
 
+        # Aborts import after one track. This also ensures that we skip
+        # the first album in the second try.
         def raise_exception(event, **kwargs):
             if event == 'item_imported':
                 raise importer.ImportAbort
@@ -1154,6 +1159,174 @@ class ResumeImportTest(unittest.TestCase, TestHelper):
         self.importer.run()
         self.assertEqual(len(self.lib.items()), 2)
         self.assertIsNotNone(self.lib.items('title:track 1').get())
+
+
+class IncrementalImportTest(unittest.TestCase, TestHelper):
+
+    def setUp(self):
+        self.setup_beets()
+        self.config['import']['incremental'] = True
+
+    def tearDown(self):
+        self.teardown_beets()
+
+    def test_incremental_album(self):
+        importer = self.create_importer(album_count=1)
+        importer.run()
+
+        # Change album name so the original file would be imported again
+        # if incremental was off.
+        album = self.lib.albums().get()
+        album['album'] = 'edited album'
+        album.store()
+
+        importer = self.create_importer(album_count=1)
+        importer.run()
+        self.assertEqual(len(self.lib.albums()), 2)
+
+    def test_incremental_item(self):
+        self.config['import']['singletons'] = True
+        importer = self.create_importer(item_count=1)
+        importer.run()
+
+        # Change track name so the original file would be imported again
+        # if incremental was off.
+        item = self.lib.items().get()
+        item['artist'] = 'edited artist'
+        item.store()
+
+        importer = self.create_importer(item_count=1)
+        importer.run()
+        self.assertEqual(len(self.lib.items()), 2)
+
+    def test_invalid_state_file(self):
+        importer = self.create_importer()
+        with open(self.config['statefile'].as_filename(), 'w') as f:
+            f.write('000')
+        importer.run()
+        self.assertEqual(len(self.lib.albums()), 1)
+
+
+def _mkmp3(path):
+    shutil.copyfile(os.path.join(_common.RSRC, 'min.mp3'), path)
+
+
+class AlbumsInDirTest(_common.TestCase):
+    def setUp(self):
+        super(AlbumsInDirTest, self).setUp()
+
+        # create a directory structure for testing
+        self.base = os.path.abspath(os.path.join(self.temp_dir, 'tempdir'))
+        os.mkdir(self.base)
+
+        os.mkdir(os.path.join(self.base, 'album1'))
+        os.mkdir(os.path.join(self.base, 'album2'))
+        os.mkdir(os.path.join(self.base, 'more'))
+        os.mkdir(os.path.join(self.base, 'more', 'album3'))
+        os.mkdir(os.path.join(self.base, 'more', 'album4'))
+
+        _mkmp3(os.path.join(self.base, 'album1', 'album1song1.mp3'))
+        _mkmp3(os.path.join(self.base, 'album1', 'album1song2.mp3'))
+        _mkmp3(os.path.join(self.base, 'album2', 'album2song.mp3'))
+        _mkmp3(os.path.join(self.base, 'more', 'album3', 'album3song.mp3'))
+        _mkmp3(os.path.join(self.base, 'more', 'album4', 'album4song.mp3'))
+
+    def test_finds_all_albums(self):
+        albums = list(albums_in_dir(self.base))
+        self.assertEqual(len(albums), 4)
+
+    def test_separates_contents(self):
+        found = []
+        for _, album in albums_in_dir(self.base):
+            found.append(re.search(r'album(.)song', album[0]).group(1))
+        self.assertTrue('1' in found)
+        self.assertTrue('2' in found)
+        self.assertTrue('3' in found)
+        self.assertTrue('4' in found)
+
+    def test_finds_multiple_songs(self):
+        for _, album in albums_in_dir(self.base):
+            n = re.search(r'album(.)song', album[0]).group(1)
+            if n == '1':
+                self.assertEqual(len(album), 2)
+            else:
+                self.assertEqual(len(album), 1)
+
+
+class MultiDiscAlbumsInDirTest(_common.TestCase):
+    def setUp(self):
+        super(MultiDiscAlbumsInDirTest, self).setUp()
+
+        self.base = os.path.abspath(os.path.join(self.temp_dir, 'tempdir'))
+        os.mkdir(self.base)
+
+        self.dirs = [
+            # Nested album, multiple subdirs.
+            # Also, false positive marker in root dir, and subtitle for disc 3.
+            os.path.join(self.base, 'ABCD1234'),
+            os.path.join(self.base, 'ABCD1234', 'cd 1'),
+            os.path.join(self.base, 'ABCD1234', 'cd 3 - bonus'),
+
+            # Nested album, single subdir.
+            # Also, punctuation between marker and disc number.
+            os.path.join(self.base, 'album'),
+            os.path.join(self.base, 'album', 'cd _ 1'),
+
+            # Flattened album, case typo.
+            # Also, false positive marker in parent dir.
+            os.path.join(self.base, 'artist [CD5]'),
+            os.path.join(self.base, 'artist [CD5]', 'CAT disc 1'),
+            os.path.join(self.base, 'artist [CD5]', 'CAt disc 2'),
+
+            # Single disc album, sorted between CAT discs.
+            os.path.join(self.base, 'artist [CD5]', 'CATS'),
+        ]
+        self.files = [
+            os.path.join(self.base, 'ABCD1234', 'cd 1', 'song1.mp3'),
+            os.path.join(self.base, 'ABCD1234', 'cd 3 - bonus', 'song2.mp3'),
+            os.path.join(self.base, 'ABCD1234', 'cd 3 - bonus', 'song3.mp3'),
+            os.path.join(self.base, 'album', 'cd _ 1', 'song4.mp3'),
+            os.path.join(self.base, 'artist [CD5]', 'CAT disc 1', 'song5.mp3'),
+            os.path.join(self.base, 'artist [CD5]', 'CAt disc 2', 'song6.mp3'),
+            os.path.join(self.base, 'artist [CD5]', 'CATS', 'song7.mp3'),
+        ]
+
+        for path in self.dirs:
+            os.mkdir(path)
+        for path in self.files:
+            _mkmp3(path)
+
+    def test_coalesce_nested_album_multiple_subdirs(self):
+        albums = list(albums_in_dir(self.base))
+        self.assertEquals(len(albums), 4)
+        root, items = albums[0]
+        self.assertEquals(root, self.dirs[0:3])
+        self.assertEquals(len(items), 3)
+
+    def test_coalesce_nested_album_single_subdir(self):
+        albums = list(albums_in_dir(self.base))
+        root, items = albums[1]
+        self.assertEquals(root, self.dirs[3:5])
+        self.assertEquals(len(items), 1)
+
+    def test_coalesce_flattened_album_case_typo(self):
+        albums = list(albums_in_dir(self.base))
+        root, items = albums[2]
+        self.assertEquals(root, self.dirs[6:8])
+        self.assertEquals(len(items), 2)
+
+    def test_single_disc_album(self):
+        albums = list(albums_in_dir(self.base))
+        root, items = albums[3]
+        self.assertEquals(root, self.dirs[8:])
+        self.assertEquals(len(items), 1)
+
+    def test_do_not_yield_empty_album(self):
+        # Remove all the MP3s.
+        for path in self.files:
+            os.remove(path)
+        albums = list(albums_in_dir(self.base))
+        self.assertEquals(len(albums), 0)
 
 
 def suite():

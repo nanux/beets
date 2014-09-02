@@ -1,5 +1,5 @@
 # This file is part of beets.
-# Copyright 2013, Adrian Sampson.
+# Copyright 2014, Adrian Sampson.
 #
 # Permission is hereby granted, free of charge, to any person obtaining
 # a copy of this software and associated documentation files (the
@@ -26,6 +26,7 @@ import _common
 from _common import unittest
 from _common import item
 import beets.library
+import beets.mediafile
 from beets import util
 from beets import plugins
 from beets import config
@@ -134,6 +135,10 @@ class DestinationTest(_common.TestCase):
     def tearDown(self):
         super(DestinationTest, self).tearDown()
         self.lib._connection().close()
+
+        # Reset config if it was changed in test cases
+        config.clear()
+        config.read(user=False, defaults=True)
 
     def test_directory_works_with_trailing_slash(self):
         self.lib.directory = 'one/'
@@ -335,37 +340,37 @@ class DestinationTest(_common.TestCase):
         with _common.platform_posix():
             name = os.path.join('a', 'b')
             self.i.title = name
-            newname = self.i._get_formatted('title')
+            newname = self.i.formatted().get('title')
         self.assertEqual(name, newname)
 
     def test_get_formatted_pads_with_zero(self):
         with _common.platform_posix():
             self.i.track = 1
-            name = self.i._get_formatted('track')
+            name = self.i.formatted().get('track')
         self.assertTrue(name.startswith('0'))
 
     def test_get_formatted_uses_kbps_bitrate(self):
         with _common.platform_posix():
             self.i.bitrate = 12345
-            val = self.i._get_formatted('bitrate')
+            val = self.i.formatted().get('bitrate')
         self.assertEqual(val, u'12kbps')
 
     def test_get_formatted_uses_khz_samplerate(self):
         with _common.platform_posix():
             self.i.samplerate = 12345
-            val = self.i._get_formatted('samplerate')
+            val = self.i.formatted().get('samplerate')
         self.assertEqual(val, u'12kHz')
 
     def test_get_formatted_datetime(self):
         with _common.platform_posix():
             self.i.added = 1368302461.210265
-            val = self.i._get_formatted('added')
+            val = self.i.formatted().get('added')
         self.assertTrue(val.startswith('2013'))
 
     def test_get_formatted_none(self):
         with _common.platform_posix():
             self.i.some_other_field = None
-            val = self.i._get_formatted('some_other_field')
+            val = self.i.formatted().get('some_other_field')
         self.assertEqual(val, u'')
 
     def test_artist_falls_back_to_albumartist(self):
@@ -445,6 +450,73 @@ class DestinationTest(_common.TestCase):
         self.i.path = util.bytestring_path(u'bar.caf\xe9')
         dest = self.i.destination(platform='linux2', fragment=True)
         self.assertEqual(dest, u'foo.caf\xe9')
+
+    def test_asciify_and_replace(self):
+        config['asciify_paths'] = True
+        self.lib.replacements = [(re.compile(u'"'), u'q')]
+        self.lib.directory = 'lib'
+        self.lib.path_formats = [('default', '$title')]
+        self.i.title = u'\u201c\u00f6\u2014\u00cf\u201d'
+        self.assertEqual(self.i.destination(), np('lib/qo--Iq'))
+
+
+class ItemFormattedMappingTest(_common.LibTestCase):
+    def test_formatted_item_value(self):
+        formatted = self.i.formatted()
+        self.assertEqual(formatted['artist'], 'the artist')
+
+    def test_get_unset_field(self):
+        formatted = self.i.formatted()
+        with self.assertRaises(KeyError):
+            formatted['other_field']
+
+    def test_get_method_with_default(self):
+        formatted = self.i.formatted()
+        self.assertEqual(formatted.get('other_field'), u'')
+
+    def test_get_method_with_specified_default(self):
+        formatted = self.i.formatted()
+        self.assertEqual(formatted.get('other_field', 'default'), 'default')
+
+    def test_item_precedence(self):
+        album = self.lib.add_album([self.i])
+        album['artist'] = 'foo'
+        album.store()
+        self.assertNotEqual('foo', self.i.formatted().get('artist'))
+
+    def test_album_flex_field(self):
+        album = self.lib.add_album([self.i])
+        album['flex'] = 'foo'
+        album.store()
+        self.assertEqual('foo', self.i.formatted().get('flex'))
+
+    def test_album_field_overrides_item_field_for_path(self):
+        # Make the album inconsistent with the item.
+        album = self.lib.add_album([self.i])
+        album.album = 'foo'
+        album.store()
+        self.i.album = 'bar'
+        self.i.store()
+
+        # Ensure the album takes precedence.
+        formatted = self.i.formatted(for_path=True)
+        self.assertEqual(formatted['album'], 'foo')
+
+    def test_artist_falls_back_to_albumartist(self):
+        self.i.artist = ''
+        formatted = self.i.formatted()
+        self.assertEqual(formatted['artist'], 'the album artist')
+
+    def test_albumartist_falls_back_to_artist(self):
+        self.i.albumartist = ''
+        formatted = self.i.formatted()
+        self.assertEqual(formatted['albumartist'], 'the artist')
+
+    def test_both_artist_and_albumartist_empty(self):
+        self.i.artist = ''
+        self.i.albumartist = ''
+        formatted = self.i.formatted()
+        self.assertEqual(formatted['albumartist'], '')
 
 
 class PathFormattingMixin(object):
@@ -723,8 +795,8 @@ class AlbumInfoTest(_common.TestCase):
 
     def test_album_items_consistent(self):
         ai = self.lib.get_album(self.i)
-        for item in ai.items():
-            if item.id == self.i.id:
+        for i in ai.items():
+            if i.id == self.i.id:
                 break
         else:
             self.fail("item not found")
@@ -966,6 +1038,15 @@ class TemplateTest(_common.LibTestCase):
         self.assertEqual(self.i.evaluate_template('$foo'), 'baz')
 
 
+class UnicodePathTest(_common.LibTestCase):
+    def test_unicode_path(self):
+        self.i.path = os.path.join(_common.RSRC, u'unicode\u2019d.mp3')
+        # If there are any problems with unicode paths, we will raise
+        # here and fail.
+        self.i.read()
+        self.i.write()
+
+
 class WriteTest(_common.LibTestCase):
     def test_write_nonexistant(self):
         self.i.path = '/path/does/not/exist'
@@ -997,6 +1078,22 @@ class WriteTest(_common.LibTestCase):
         self.i.write(custom_path)
         self.assertEqual(MediaFile(custom_path).artist, 'new artist')
         self.assertNotEqual(MediaFile(self.i.path).artist, 'new artist')
+
+
+class ItemReadTest(unittest.TestCase):
+
+    def test_unreadable_raise_read_error(self):
+        unreadable = os.path.join(_common.RSRC, 'image-2x3.png')
+        item = beets.library.Item()
+        with self.assertRaises(beets.library.ReadError) as cm:
+            item.read(unreadable)
+        self.assertIsInstance(cm.exception.reason,
+                              beets.mediafile.UnreadableFileError)
+
+    def test_nonexistent_raise_read_error(self):
+        item = beets.library.Item()
+        with self.assertRaises(beets.library.ReadError):
+            item.read('/thisfiledoesnotexist')
 
 
 def suite():
